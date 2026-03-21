@@ -1,0 +1,91 @@
+name: Build fio (multi-arch static)
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            target: x86_64-linux-musl
+          - arch: x86
+            target: i686-linux-musl
+          - arch: aarch64
+            target: aarch64-linux-musl
+          - arch: arm
+            target: arm-linux-musleabihf
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential curl git
+
+      - name: Download musl toolchain
+        run: |
+          TARGET=${{ matrix.target }}
+          curl -L https://musl.cc/${TARGET}-cross.tgz -o toolchain.tgz
+          tar -xzf toolchain.tgz
+          echo "$PWD/${TARGET}-cross/bin" >> $GITHUB_PATH
+
+      - name: Build fio
+        run: |
+          set -e
+
+          ARCH=${{ matrix.arch }}
+          TARGET=${{ matrix.target }}
+
+          git clone https://github.com/axboe/fio.git
+          cd fio
+
+          CC=${TARGET}-gcc ./configure \
+            --disable-native \
+            --build-static
+
+          make -j$(nproc)
+
+          strip fio
+
+          cp fio ../fio_${ARCH}
+
+      - name: Verify binary
+        run: |
+          file fio_${{ matrix.arch }}
+          ls -lh fio_${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fio_${{ matrix.arch }}
+          path: fio_${{ matrix.arch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Collect binaries
+        run: |
+          mkdir release
+          find dist -name "fio_*" -type f -exec cp {} release/ \;
+          cd release
+          sha256sum fio_* > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/fio_*
+            release/checksums.txt
