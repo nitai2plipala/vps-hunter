@@ -46,10 +46,17 @@ jobs:
           git clone https://github.com/axboe/fio.git
           cd fio
 
-          export CFLAGS="-static"
+          # 关键：让 Zig 完整模拟 gcc toolchain
+          export CC="zig cc -target ${TARGET} -static"
+          export CXX="zig c++ -target ${TARGET} -static"
+          export AR="zig ar"
+          export RANLIB="zig ranlib"
+
+          # 避免 configure 检测失败
+          export CFLAGS="-O2"
           export LDFLAGS="-static"
 
-          CC="zig cc -target ${TARGET}" ./configure \
+          ./configure \
             --disable-native \
             --build-static
 
