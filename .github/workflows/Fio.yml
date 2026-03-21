@@ -5,6 +5,9 @@ on:
   # schedule:
   #   - cron: '0 2 * * 1'   # 每周一 02:00 UTC 自动检查新版本
 
+permissions:
+      contents: write
+
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # 1. 检查是否需要构建
@@ -59,15 +62,15 @@ jobs:
           - arch: x64
             cross: x86_64-linux-musl
             host:  x86_64-linux-musl
-          - arch: x86
-            cross: i686-linux-musl
-            host:  i686-linux-musl
-          - arch: aarch64
-            cross: aarch64-linux-musl
-            host:  aarch64-linux-musl
-          - arch: arm
-            cross: arm-linux-musleabihf
-            host:  arm-linux-musleabihf
+          # - arch: x86
+          #   cross: i686-linux-musl
+          #   host:  i686-linux-musl
+          # - arch: aarch64
+          #   cross: aarch64-linux-musl
+          #   host:  aarch64-linux-musl
+          # - arch: arm
+          #   cross: arm-linux-musleabihf
+          #   host:  arm-linux-musleabihf
 
     steps:
       - name: Checkout repository
@@ -292,7 +295,7 @@ jobs:
           path: vt-results
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: fio-${{ needs.check-release.outputs.version }}
           name: fio ${{ needs.check-release.outputs.version }} Static Binaries
