@@ -56,12 +56,12 @@ jobs:
       fail-fast: false        # 一个架构失败不影响其他架构继续
       matrix:
         include:
-          - arch: x64
-            cross: x86_64-linux-musl
-            host:  x86_64-linux-musl
-          - arch: x86
-            cross: i686-linux-musl
-            host:  i686-linux-musl
+          # - arch: x64
+          #   cross: x86_64-linux-musl
+          #   host:  x86_64-linux-musl
+          # - arch: x86
+          #   cross: i686-linux-musl
+          #   host:  i686-linux-musl
           - arch: aarch64
             cross: aarch64-linux-musl
             host:  aarch64-linux-musl
