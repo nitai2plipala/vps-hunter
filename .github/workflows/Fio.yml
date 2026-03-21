@@ -2,8 +2,8 @@ name: build Fio tool
 
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: '0 2 * * 1'   # 每周一 02:00 UTC 自动检查新版本
+  schedule:
+    - cron: '0 2 * * 1'   # 每周一 02:00 UTC 自动检查新版本
 
 permissions:
       contents: write
