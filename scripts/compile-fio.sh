@@ -15,7 +15,7 @@ echo ">>> Building fio ${VERSION} for ${ARCH} (${CROSS})"
 # ── Install build dependencies ─────────────────────────────────────────────────
 apk add --no-cache \
     bash curl make tar xz \
-    gcc musl-dev \
+    gcc musl-dev linux-headers \
     patch libaio-dev file binutils
 
 # ── Download musl cross-compilation toolchain ──────────────────────────────────
