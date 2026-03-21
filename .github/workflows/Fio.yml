@@ -62,15 +62,15 @@ jobs:
           - arch: x64
             cross: x86_64-linux-musl
             host:  x86_64-linux-musl
-          # - arch: x86
-          #   cross: i686-linux-musl
-          #   host:  i686-linux-musl
-          # - arch: aarch64
-          #   cross: aarch64-linux-musl
-          #   host:  aarch64-linux-musl
-          # - arch: arm
-          #   cross: arm-linux-musleabihf
-          #   host:  arm-linux-musleabihf
+          - arch: x86
+            cross: i686-linux-musl
+            host:  i686-linux-musl
+          - arch: aarch64
+            cross: aarch64-linux-musl
+            host:  aarch64-linux-musl
+          - arch: arm
+            cross: arm-linux-musleabihf
+            host:  arm-linux-musleabihf
 
     steps:
       - name: Checkout repository
