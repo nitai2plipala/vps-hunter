@@ -81,7 +81,7 @@ jobs:
             --env CROSS="${{ matrix.cross }}" \
             --env HOST="${{ matrix.host }}" \
             --env VERSION="${{ needs.check-release.outputs.version }}" \
-            alpine:edge \
+            alpine:latest \
             sh /io/scripts/compile-fio.sh
 
       - name: Verify binary
