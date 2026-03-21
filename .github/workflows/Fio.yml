@@ -1,4 +1,4 @@
-name: Build Fio Static Binaries
+name: build Fio tool
 
 on:
   workflow_dispatch:
