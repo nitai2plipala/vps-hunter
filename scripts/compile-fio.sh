@@ -13,12 +13,9 @@ set -eu
 echo ">>> Building fio ${VERSION} for ${ARCH} (${CROSS})"
 
 # ── Install build dependencies ─────────────────────────────────────────────────
-# 使用 edge 仓库获取最新 linux-headers，解决 FALLOC_FL_ZERO_RANGE 等缺失定义
-apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
-    linux-headers
 apk add --no-cache \
     bash curl make tar xz \
-    gcc musl-dev \
+    gcc musl-dev linux-headers \
     patch libaio-dev
 
 # ── Download musl cross-compilation toolchain ──────────────────────────────────
