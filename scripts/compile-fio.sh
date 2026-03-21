@@ -1,9 +1,8 @@
-#!/bin/bash
-# compile-fio.sh - Cross-compile fio as a static binary using musl toolchain
-# Called inside phusion/holy-build-box-64 container
+#!/bin/sh
+# compile-fio.sh - Cross-compile fio as a static binary
+# Docker image: alpine:latest
 # Required env: ARCH, CROSS, HOST, VERSION
-set -euo pipefail
-export MANPATH="${MANPATH:-}"   # 防止 Holy Build Box activate 脚本报 unbound variable
+set -eu
 
 # ── Validate required variables ────────────────────────────────────────────────
 : "${ARCH:?ARCH is required}"
@@ -13,67 +12,81 @@ export MANPATH="${MANPATH:-}"   # 防止 Holy Build Box activate 脚本报 unbou
 
 echo ">>> Building fio ${VERSION} for ${ARCH} (${CROSS})"
 
-# ── Activate Holy Build Box lib environment ────────────────────────────────────
-source /hbb/activate
-set -x
-
-# ── Fix obsolete CentOS repos ──────────────────────────────────────────────────
-cd /etc/yum.repos.d/
-rm -f CentOS-Base.repo CentOS-SCLo-scl-rh.repo CentOS-SCLo-scl.repo \
-      CentOS-fasttrack.repo CentOS-x86_64-kernel.repo 2>/dev/null || true
-
-yum install -y yum-plugin-ovl 2>/dev/null || true   # fix docker overlay fs
-yum install -y xz
+# ── Install build dependencies ─────────────────────────────────────────────────
+apk add --no-cache \
+    bash curl make tar xz \
+    gcc musl-dev linux-headers \
+    patch
 
 # ── Download musl cross-compilation toolchain ──────────────────────────────────
-cd ~
-TOOLCHAIN_URL="https://musl-mirror-xdhpcgbg.edgeone.dev/${CROSS}-cross.tgz"
-echo ">>> Downloading toolchain: ${TOOLCHAIN_URL}"
-curl -L -4 --retry 5 --retry-delay 3 --connect-timeout 20 \
-  "${TOOLCHAIN_URL}" -o "${CROSS}-cross.tgz"
-tar xf "${CROSS}-cross.tgz"
+# Alpine x64 本身是 musl，x64 架构直接用系统 gcc 即可，其他架构需要交叉工具链
+if [ "${ARCH}" = "x64" ]; then
+    CC_BIN="gcc"
+    echo ">>> Using native Alpine gcc for x64"
+else
+    cd /tmp
+    echo ">>> Downloading musl cross toolchain for ${CROSS}"
+    curl -L --retry 5 --retry-delay 5 \
+         --connect-timeout 30 --max-time 300 \
+         "https://musl-mirror-o45mvnohof.edgeone.dev/${CROSS}-cross.tgz" \
+         -o "${CROSS}-cross.tgz" || {
+        echo ">>> musl.cc failed, trying github mirror..."
+        curl -L --retry 5 --retry-delay 5 \
+             --connect-timeout 30 --max-time 300 \
+             "https://github.com/richfelker/musl-cross-make/releases/download/v0.9.9/${CROSS}-cross.tgz" \
+             -o "${CROSS}-cross.tgz"
+    }
+    tar xf "${CROSS}-cross.tgz"
+    CC_BIN="/tmp/${CROSS}-cross/bin/${CROSS}-gcc"
+    echo ">>> Toolchain ready: ${CC_BIN}"
+fi
 
-CC_BIN="/root/${CROSS}-cross/bin/${CROSS}-gcc"
-
-# ── Build libaio as a static library ──────────────────────────────────────────
+# ── Build libaio as static library ────────────────────────────────────────────
 LIBAIO_VERSION="0.3.113"
-cd ~
+cd /tmp
 echo ">>> Building libaio ${LIBAIO_VERSION}"
-curl -L -4 --retry 5 --retry-delay 3 --connect-timeout 20 \
-  "http://ftp.de.debian.org/debian/pool/main/liba/libaio/libaio_${LIBAIO_VERSION}.orig.tar.gz" \
-  -o libaio.tar.gz
+curl -L --retry 5 --retry-delay 3 \
+     --connect-timeout 30 --max-time 60 \
+     "http://ftp.de.debian.org/debian/pool/main/liba/libaio/libaio_${LIBAIO_VERSION}.orig.tar.gz" \
+     -o libaio.tar.gz
 tar xf libaio.tar.gz
 cd libaio-*/src
-CC="${CC_BIN}" ENABLE_SHARED=0 make prefix=/hbb_exe install
+CC="${CC_BIN}" ENABLE_SHARED=0 make
+CC="${CC_BIN}" ENABLE_SHARED=0 make install prefix=/usr/local
+echo ">>> libaio installed"
 
-# ── Switch to Holy Build Box exe environment ──────────────────────────────────
-source /hbb_exe/activate
-
-# ── Download and compile fio ──────────────────────────────────────────────────
-cd ~
-FIO_TAG="${VERSION}"
+# ── Download and compile fio ───────────────────────────────────────────────────
+cd /tmp
 FIO_DIR="fio-${VERSION#fio-}"
-
-echo ">>> Downloading fio ${FIO_TAG}"
-curl -L -4 --retry 10 --retry-delay 3 --connect-timeout 300 \
-  "https://github.com/axboe/fio/archive/${FIO_TAG}.tar.gz" \
-  -o fio.tar.gz
+echo ">>> Downloading fio ${VERSION}"
+curl -L --retry 5 --retry-delay 3 \
+     --connect-timeout 30 --max-time 120 \
+     "https://github.com/axboe/fio/archive/${VERSION}.tar.gz" \
+     -o fio.tar.gz
 tar xf fio.tar.gz
 cd ${FIO_DIR}*
 
 echo ">>> Configuring fio"
-CC="${CC_BIN}" ./configure \
-  --disable-native \
-  --build-static \
-  --host="${HOST}"
+CC="${CC_BIN}" \
+LDFLAGS="-static" \
+./configure \
+    --disable-native \
+    --build-static \
+    --host="${HOST}"
 
-echo ">>> Compiling fio"
+echo ">>> Compiling fio ($(nproc) cores)"
+CC="${CC_BIN}" \
+LDFLAGS="-static" \
 make -j"$(nproc)"
 
-# ── Verify binary is fully static ─────────────────────────────────────────────
-echo ">>> Verifying static linkage"
-libcheck fio
+# ── Verify static linkage ──────────────────────────────────────────────────────
+echo ">>> Verifying binary"
+file fio
+file fio | grep -q "statically linked" || {
+    echo "ERROR: binary is not statically linked"
+    exit 1
+}
 
-# ── Copy output ───────────────────────────────────────────────────────────────
+# ── Copy output ────────────────────────────────────────────────────────────────
 cp fio "/io/fio_${ARCH}"
 echo ">>> Done: fio_${ARCH} ($(du -sh "/io/fio_${ARCH}" | cut -f1))"
