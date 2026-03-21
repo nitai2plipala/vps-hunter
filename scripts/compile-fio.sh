@@ -27,7 +27,7 @@ yum install -y xz
 
 # ── Download musl cross-compilation toolchain ──────────────────────────────────
 cd ~
-TOOLCHAIN_URL="https://musl.cc/${CROSS}-cross.tgz"
+TOOLCHAIN_URL="https://musl-mirror-xdhpcgbg.edgeone.dev/${CROSS}-cross.tgz"
 echo ">>> Downloading toolchain: ${TOOLCHAIN_URL}"
 curl -L -4 --retry 5 --retry-delay 3 --connect-timeout 20 \
   "${TOOLCHAIN_URL}" -o "${CROSS}-cross.tgz"
