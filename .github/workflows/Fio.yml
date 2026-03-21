@@ -35,14 +35,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.get-version.outputs.version }}"
-          if gh release view "fio-${VERSION}" --repo "${{ github.repository }}" \
-               > /dev/null 2>&1; then
-            echo "Version ${VERSION} already released, skipping."
-            echo "should-build=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Version ${VERSION} not found, will build."
-            echo "should-build=true" >> "$GITHUB_OUTPUT"
-          fi
+          # if gh release view "fio-${VERSION}" --repo "${{ github.repository }}" \
+          #      > /dev/null 2>&1; then
+          #   echo "Version ${VERSION} already released, skipping."
+          #   echo "should-build=false" >> "$GITHUB_OUTPUT"
+          # else
+          #   echo "Version ${VERSION} not found, will build."
+          #   echo "should-build=true" >> "$GITHUB_OUTPUT"
+          # fi
+          echo "should-build=true" >> "$GITHUB_OUTPUT"  # 测试用：强制构建
 
   # ────────────────────────────────────────────────────────────────────────────
   # 2. 多架构并行编译
