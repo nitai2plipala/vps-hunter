@@ -57,14 +57,16 @@ echo ">>> libaio installed"
 
 # ── Download and compile fio ───────────────────────────────────────────────────
 cd /tmp
-FIO_DIR="fio-${VERSION#fio-}"
 echo ">>> Downloading fio ${VERSION}"
 curl -L --retry 5 --retry-delay 3 \
      --connect-timeout 30 --max-time 120 \
      "https://github.com/axboe/fio/archive/${VERSION}.tar.gz" \
      -o fio.tar.gz
 tar xf fio.tar.gz
-cd ${FIO_DIR}*
+# GitHub 解压目录名为 fio-<tag去掉fio-前缀>，例如 tag=fio-3.41 → 目录=fio-3.41
+FIO_DIR=$(tar tf fio.tar.gz 2>/dev/null | head -1 | cut -d/ -f1)
+echo ">>> Entering directory: ${FIO_DIR}"
+cd "${FIO_DIR}"
 
 echo ">>> Configuring fio"
 CC="${CC_BIN}" \
