@@ -1,64 +1,397 @@
-name: Build fio Multi-Arch (QEMU)
+name: Build fio Static Binaries
 
 on:
   workflow_dispatch:
+  # schedule:
+  #   - cron: '0 2 * * 1'   # 每周一 02:00 UTC 自动检查新版本
 
 jobs:
-  build:
+  # ────────────────────────────────────────────────────────────────────────────
+  # 1. 检查是否需要构建
+  # ────────────────────────────────────────────────────────────────────────────
+  check-release:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        arch: [amd64, arm64, armv7]
-
+    outputs:
+      version:      ${{ steps.get-version.outputs.version }}
+      should-build: ${{ steps.check-version.outputs.should-build }}
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Get latest fio release tag
+        id: get-version
+        run: |
+          VERSION=$(curl -4 --retry 5 --retry-delay 2 --connect-timeout 15 -sf \
+            https://api.github.com/repos/axboe/fio/releases/latest \
+            | jq -r '.tag_name')
+          [[ -z "$VERSION" || "$VERSION" == "null" ]] && \
+            { echo "::error::Failed to fetch fio version"; exit 1; }
+          echo "Latest fio version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release already exists
+        id: check-version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+          # if gh release view "fio-${VERSION}" --repo "${{ github.repository }}" \
+          #      > /dev/null 2>&1; then
+          #   echo "Version ${VERSION} already released, skipping."
+          #   echo "should-build=false" >> "$GITHUB_OUTPUT"
+          # else
+          #   echo "Version ${VERSION} not found, will build."
+          #   echo "should-build=true" >> "$GITHUB_OUTPUT"
+          # fi
+          echo "should-build=true" >> "$GITHUB_OUTPUT"  # 测试用：强制构建
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 2. 多架构并行编译
+  # ────────────────────────────────────────────────────────────────────────────
+  build:
+    needs: check-release
+    if: needs.check-release.outputs.should-build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false        # 一个架构失败不影响其他架构继续
+      matrix:
+        include:
+          - arch: x64
+            cross: x86_64-linux-musl
+            host:  x86_64-linux-musl
+          - arch: x86
+            cross: i686-linux-musl
+            host:  i686-linux-musl
+          - arch: aarch64
+            cross: aarch64-linux-musl
+            host:  aarch64-linux-musl
+          - arch: arm
+            cross: arm-linux-musleabihf
+            host:  arm-linux-musleabihf
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Create output dir
-        run: mkdir -p tools/fio
-
-      - name: Build fio (static)
+      - name: Compile fio (${{ matrix.arch }})
         run: |
-          ARCH=${{ matrix.arch }}
+          docker run --rm \
+            -v "$(pwd):/io" \
+            --env ARCH="${{ matrix.arch }}" \
+            --env CROSS="${{ matrix.cross }}" \
+            --env HOST="${{ matrix.host }}" \
+            --env VERSION="${{ needs.check-release.outputs.version }}" \
+            phusion/holy-build-box-64:latest \
+            bash /io/scripts/compile-fio.sh
 
-          case "$ARCH" in
-            amd64) TARGET="x86_64-linux-musl" ;;
-            arm64) TARGET="aarch64-linux-musl" ;;
-            armv7) TARGET="armv7l-linux-musleabihf" ;;
-          esac
+      - name: Verify binary
+        run: |
+          ARCH="${{ matrix.arch }}"
+          echo "--- file info ---"
+          file "fio_${ARCH}"
+          echo "--- size ---"
+          du -sh "fio_${ARCH}"
+          # 确保是 ELF 可执行文件
+          file "fio_${ARCH}" | grep -q "ELF" || \
+            { echo "::error::fio_${ARCH} is not an ELF binary"; exit 1; }
+          # 确保是静态链接
+          file "fio_${ARCH}" | grep -q "statically linked" || \
+            { echo "::error::fio_${ARCH} is not statically linked"; exit 1; }
 
-          docker run --rm --platform=linux/$ARCH \
-            -v $PWD:/work \
-            -w /work \
-            alpine:3.19 sh -c "
-              set -e
-
-              apk add --no-cache \
-                build-base \
-                linux-headers \
-                git \
-                musl-dev
-
-              git clone https://github.com/axboe/fio.git
-              cd fio
-
-              ./configure --disable-shared --enable-static
-              make -j$(nproc)
-
-              strip fio || true
-
-              cp fio /work/tools/fio/fio-linux-$ARCH
-            "
-
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fio-binaries
-          path: tools/fio/*
+          name: fio_${{ matrix.arch }}
+          path: fio_${{ matrix.arch }}
+          retention-days: 7    # 保留 7 天，方便排查问题
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3. VirusTotal 安全扫描（带轮询重试，最多等 10 分钟）
+  # ────────────────────────────────────────────────────────────────────────────
+  virustotal-scan:
+    needs: [check-release, build]
+    if: needs.check-release.outputs.should-build == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      all-clean: ${{ steps.poll-results.outputs.all-clean }}
+      scan-results: ${{ steps.poll-results.outputs.scan-results }}
+    steps:
+      - name: Validate VirusTotal API key
+        run: |
+          if [[ -z "${{ secrets.VIRUSTOTAL_API_KEY }}" ]]; then
+            echo "::error::Secret VIRUSTOTAL_API_KEY is not configured"
+            exit 1
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten binaries
+        run: |
+          mkdir -p scan-binaries
+          find artifacts -name "fio_*" -type f -exec cp {} scan-binaries/ \;
+          ls -la scan-binaries/
+
+      - name: Upload binaries to VirusTotal
+        id: vt-upload
+        run: |
+          > analysis_ids.txt   # 清空文件
+          for binary in scan-binaries/fio_*; do
+            filename=$(basename "$binary")
+            echo "Uploading ${filename}..."
+
+            response=$(curl -4 --retry 3 --retry-delay 5 --connect-timeout 20 \
+              -sf --request POST \
+              --url "https://www.virustotal.com/api/v3/files" \
+              --header "accept: application/json" \
+              --header "content-type: multipart/form-data" \
+              --header "x-apikey: ${{ secrets.VIRUSTOTAL_API_KEY }}" \
+              --form "file=@${binary}" 2>&1) || true
+
+            analysis_id=$(echo "$response" | jq -r '.data.id // empty')
+            if [[ -z "$analysis_id" ]]; then
+              echo "::error::Failed to upload ${filename}: ${response}"
+              exit 1
+            fi
+
+            echo "${filename}:${analysis_id}" >> analysis_ids.txt
+            echo "  → analysis_id: ${analysis_id}"
+          done
+
+      - name: Poll VirusTotal results (max 10 min)
+        id: poll-results
+        run: |
+          MAX_ATTEMPTS=20      # 20 × 30s = 10 分钟
+          POLL_INTERVAL=30
+
+          ALL_CLEAN=true
+          declare -A RESULTS  # filename → result line
+
+          # 初始化待轮询列表
+          mapfile -t PENDING < <(cat analysis_ids.txt)
+
+          for attempt in $(seq 1 $MAX_ATTEMPTS); do
+            STILL_PENDING=()
+            echo "--- Poll attempt ${attempt}/${MAX_ATTEMPTS} ---"
+
+            for entry in "${PENDING[@]}"; do
+              filename="${entry%%:*}"
+              analysis_id="${entry##*:}"
+
+              resp=$(curl -4 --retry 3 --retry-delay 3 --connect-timeout 15 \
+                -sf --request GET \
+                --url "https://www.virustotal.com/api/v3/analyses/${analysis_id}" \
+                --header "accept: application/json" \
+                --header "x-apikey: ${{ secrets.VIRUSTOTAL_API_KEY }}")
+
+              status=$(echo "$resp" | jq -r '.data.attributes.status')
+
+              if [[ "$status" == "completed" ]]; then
+                malicious=$(echo  "$resp" | jq -r '.data.attributes.stats.malicious  // 0')
+                suspicious=$(echo "$resp" | jq -r '.data.attributes.stats.suspicious // 0')
+                undetected=$(echo "$resp" | jq -r '.data.attributes.stats.undetected // 0')
+                file_hash=$(echo  "$resp" | jq -r '.data.links.item' | sed 's|.*/||')
+                vt_url="https://www.virustotal.com/gui/file/${file_hash}"
+
+                if [[ "$malicious" -gt 0 || "$suspicious" -gt 0 ]]; then
+                  flag="⚠️ FLAGGED"
+                  ALL_CLEAN=false
+                  echo "::warning::${filename}: malicious=${malicious} suspicious=${suspicious}"
+                else
+                  flag="✅ Clean"
+                fi
+
+                RESULTS["$filename"]="| ${filename} | ${flag} | ${malicious} | ${suspicious} | ${undetected} | [link](${vt_url}) |"
+                echo "  ✓ ${filename}: ${flag}"
+              else
+                STILL_PENDING+=("$entry")
+                echo "  ⏳ ${filename}: ${status}"
+              fi
+            done
+
+            PENDING=("${STILL_PENDING[@]}")
+            [[ ${#PENDING[@]} -eq 0 ]] && break
+
+            if [[ $attempt -lt $MAX_ATTEMPTS ]]; then
+              sleep $POLL_INTERVAL
+            fi
+          done
+
+          # 超时未完成的条目标记为失败
+          for entry in "${PENDING[@]}"; do
+            filename="${entry%%:*}"
+            RESULTS["$filename"]="| ${filename} | ⏳ Timeout | N/A | N/A | N/A | N/A |"
+            ALL_CLEAN=false
+            echo "::error::${filename}: scan timed out after $((MAX_ATTEMPTS * POLL_INTERVAL))s"
+          done
+
+          # 生成 Markdown 报告
+          {
+            echo "## VirusTotal Scan Results"
+            echo "| Binary | Status | Malicious | Suspicious | Undetected | VirusTotal |"
+            echo "|--------|--------|-----------|------------|------------|------------|"
+            for filename in "${!RESULTS[@]}"; do
+              echo "${RESULTS[$filename]}"
+            done
+          } > scan_results.md
+
+          cat scan_results.md >> "$GITHUB_STEP_SUMMARY"
+
+          # 转义换行用于 output
+          ESCAPED=$(awk '{printf "%s\\n", $0}' scan_results.md)
+          echo "scan-results=${ESCAPED}" >> "$GITHUB_OUTPUT"
+          echo "all-clean=${ALL_CLEAN}"  >> "$GITHUB_OUTPUT"
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: virustotal-scan-results
+          path: |
+            scan_results.md
+            analysis_ids.txt
+          retention-days: 30
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 4. 发布到 GitHub Releases + 下载到 tools/fio/
+  # ────────────────────────────────────────────────────────────────────────────
+  create-release:
+    needs: [check-release, build, virustotal-scan]
+    if: |
+      needs.check-release.outputs.should-build == 'true' &&
+      needs.virustotal-scan.outputs.all-clean == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -name "fio_*" -type f -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd release-assets
+          sha256sum fio_* > fio-checksums.sha256
+          echo "--- Checksums ---"
+          cat fio-checksums.sha256
+
+      - name: Download VirusTotal scan results artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: virustotal-scan-results
+          path: vt-results
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: fio-${{ needs.check-release.outputs.version }}
+          name: fio ${{ needs.check-release.outputs.version }} Static Binaries
+          body: |
+            ## fio ${{ needs.check-release.outputs.version }} — Static Binaries
+
+            Built with musl cross-compilation toolchains for maximum portability.
+            No external shared library dependencies.
+
+            | Binary | Architecture |
+            |--------|-------------|
+            | `fio_x64`     | x86_64 (64-bit) |
+            | `fio_x86`     | i686 (32-bit)   |
+            | `fio_aarch64` | ARM 64-bit      |
+            | `fio_arm`     | ARM 32-bit (hf) |
+
+            ### Security
+
+            All binaries scanned by VirusTotal before release.
+
+            ${{ needs.virustotal-scan.outputs.scan-results }}
+
+            ### Verify checksums
+
+            ```bash
+            sha256sum -c fio-checksums.sha256
+            ```
+          files: |
+            release-assets/fio_*
+            release-assets/fio-checksums.sha256
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 将二进制下载到仓库 tools/fio/ 目录并提交 ────────────────────────────
+      - name: Install binaries to tools/fio/
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          mkdir -p tools/fio
+
+          for binary in release-assets/fio_*; do
+            fname=$(basename "$binary")
+            cp "$binary" "tools/fio/${fname}"
+            chmod +x "tools/fio/${fname}"
+          done
+
+          cp release-assets/fio-checksums.sha256 tools/fio/
+          cp vt-results/scan_results.md          tools/fio/virustotal-${VERSION}.md
+
+          echo "--- tools/fio/ contents ---"
+          ls -lh tools/fio/
+
+      - name: Commit tools/fio/ to repository
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add tools/fio/
+          git diff --cached --quiet && \
+            echo "Nothing to commit, tools/fio/ already up to date." && exit 0
+
+          git commit -m "chore: update fio binaries to ${VERSION}
+
+          - Built for x64, x86, aarch64, arm (musl static)
+          - All binaries verified clean by VirusTotal
+          - SHA256 checksums included"
+
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 5. 失败通知
+  # ────────────────────────────────────────────────────────────────────────────
+  notify-failure:
+    needs: [check-release, build, virustotal-scan]
+    if: |
+      always() &&
+      needs.check-release.outputs.should-build == 'true' &&
+      (failure() || needs.virustotal-scan.outputs.all-clean == 'false')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write failure summary
+        run: |
+          VERSION="${{ needs.check-release.outputs.version }}"
+          {
+            echo "## ⚠️ fio Build Failed"
+            echo "**Version:** ${VERSION}"
+            echo "**Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            if [[ "${{ needs.virustotal-scan.outputs.all-clean }}" == "false" ]]; then
+              echo "**Reason:** VirusTotal flagged one or more binaries"
+              echo ""
+              echo "${{ needs.virustotal-scan.outputs.scan-results }}"
+            else
+              echo "**Reason:** Compilation or other step failed — check logs above"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
