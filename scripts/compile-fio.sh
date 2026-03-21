@@ -86,11 +86,12 @@ make -j"$(nproc)"
 # ── Verify static linkage ──────────────────────────────────────────────────────
 echo ">>> Verifying binary"
 file fio
-# static-pie 也是静态二进制，file 输出略有不同，用 ldd 来判断
-ldd fio 2>&1 | grep -q "not a dynamic executable\|statically linked" || {
+# 检查是否有 INTERP 段，有则说明依赖动态链接器，静态/static-pie 均无此段
+if readelf -l fio | grep -q "INTERP"; then
     echo "ERROR: binary is not statically linked"
     exit 1
-}
+fi
+echo ">>> Binary is statically linked (OK)"
 
 # ── Copy output ────────────────────────────────────────────────────────────────
 cp fio "/io/fio_${ARCH}"
