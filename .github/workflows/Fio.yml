@@ -394,29 +394,3 @@ jobs:
               echo "**Reason:** Compilation or other step failed — check logs above"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Send Slack notification
-        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
-        uses: slackapi/slack-github-action@v2
-        with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            {
-              "text": "❌ fio ${{ needs.check-release.outputs.version }} build failed",
-              "attachments": [{
-                "color": "danger",
-                "fields": [
-                  {
-                    "title": "Repository",
-                    "value": "${{ github.repository }}",
-                    "short": true
-                  },
-                  {
-                    "title": "Run",
-                    "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>",
-                    "short": true
-                  }
-                ]
-              }]
-            }
