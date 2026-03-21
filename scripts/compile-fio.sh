@@ -29,7 +29,7 @@ yum install -y xz
 cd ~
 TOOLCHAIN_URL="https://musl-mirror-xdhpcgbg.edgeone.dev/${CROSS}-cross.tgz"
 echo ">>> Downloading toolchain: ${TOOLCHAIN_URL}"
-curl -L -4 --retry 5 --retry-delay 3 --connect-timeout 20 \
+curl -L -4 --retry 5 --retry-delay 3 --connect-timeout 500 \
   "${TOOLCHAIN_URL}" -o "${CROSS}-cross.tgz"
 tar xf "${CROSS}-cross.tgz"
 
