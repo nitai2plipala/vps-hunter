@@ -72,7 +72,7 @@ echo ">>> Configuring fio"
 # FALLOC_FL_ZERO_RANGE 是 glibc 扩展，musl 未定义，手动补上
 CC="${CC_BIN}" \
 CFLAGS="-DFALLOC_FL_ZERO_RANGE=0x10" \
-LDFLAGS="-static" \
+LDFLAGS="-static -latomic" \
 ./configure \
     --disable-native \
     --build-static 
@@ -80,7 +80,7 @@ LDFLAGS="-static" \
 echo ">>> Compiling fio ($(nproc) cores)"
 CC="${CC_BIN}" \
 CFLAGS="-DFALLOC_FL_ZERO_RANGE=0x10" \
-LDFLAGS="-static" \
+LDFLAGS="-static -latomic" \
 make -j"$(nproc)"
 
 # ── Verify static linkage ──────────────────────────────────────────────────────
