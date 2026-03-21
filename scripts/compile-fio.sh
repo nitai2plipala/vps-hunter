@@ -73,7 +73,8 @@ CC="${CC_BIN}" \
 LDFLAGS="-static" \
 ./configure \
     --disable-native \
-    --build-static
+    --build-static \
+    --disable-libzbc
 
 echo ">>> Compiling fio ($(nproc) cores)"
 CC="${CC_BIN}" \
