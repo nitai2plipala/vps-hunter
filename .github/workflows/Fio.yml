@@ -94,9 +94,9 @@ jobs:
           # 确保是 ELF 可执行文件
           file "fio_${ARCH}" | grep -q "ELF" || \
             { echo "::error::fio_${ARCH} is not an ELF binary"; exit 1; }
-          # 确保是静态链接
-          file "fio_${ARCH}" | grep -q "statically linked" || \
-            { echo "::error::fio_${ARCH} is not statically linked"; exit 1; }
+          # 确保是静态链接（static 或 static-pie 均无 INTERP 段）
+          readelf -l "fio_${ARCH}" | grep -q "INTERP" && \
+            { echo "::error::fio_${ARCH} is not statically linked"; exit 1; } || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
