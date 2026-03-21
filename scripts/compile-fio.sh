@@ -3,6 +3,7 @@
 # Called inside phusion/holy-build-box-64 container
 # Required env: ARCH, CROSS, HOST, VERSION
 set -euo pipefail
+export MANPATH="${MANPATH:-}"   # 防止 Holy Build Box activate 脚本报 unbound variable
 
 # ── Validate required variables ────────────────────────────────────────────────
 : "${ARCH:?ARCH is required}"
