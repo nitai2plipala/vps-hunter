@@ -55,7 +55,7 @@ FIO_TAG="${VERSION}"
 FIO_DIR="fio-${VERSION#fio-}"
 
 echo ">>> Downloading fio ${FIO_TAG}"
-curl -L -4 --retry 5 --retry-delay 3 --connect-timeout 20 \
+curl -L -4 --retry 10 --retry-delay 3 --connect-timeout 300 \
   "https://github.com/axboe/fio/archive/${FIO_TAG}.tar.gz" \
   -o fio.tar.gz
 tar xf fio.tar.gz
