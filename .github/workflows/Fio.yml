@@ -1,4 +1,4 @@
-name: Build fio Static Binaries
+name: Build Fio Static Binaries
 
 on:
   workflow_dispatch:
@@ -81,7 +81,7 @@ jobs:
             --env CROSS="${{ matrix.cross }}" \
             --env HOST="${{ matrix.host }}" \
             --env VERSION="${{ needs.check-release.outputs.version }}" \
-            alpine:latest \
+            alpine:edge \
             sh /io/scripts/compile-fio.sh
 
       - name: Verify binary
