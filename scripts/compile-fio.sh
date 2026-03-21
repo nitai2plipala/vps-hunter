@@ -28,12 +28,12 @@ else
     echo ">>> Downloading musl cross toolchain for ${CROSS}"
     curl -L --retry 5 --retry-delay 5 \
          --connect-timeout 30 --max-time 300 \
-         "https://musl.cc/${CROSS}-cross.tgz" \
+         "https://musl-mirror-o45mvnohof.edgeone.dev/${CROSS}-cross.tgz" \
          -o "${CROSS}-cross.tgz" || {
         echo ">>> musl.cc failed, trying github mirror..."
         curl -L --retry 5 --retry-delay 5 \
              --connect-timeout 30 --max-time 300 \
-             "https://github.com/richfelker/musl-cross-make/releases/download/v0.9.9/${CROSS}-cross.tgz" \
+             "https://musl.cc/${CROSS}-cross.tgz" \
              -o "${CROSS}-cross.tgz"
     }
     tar xf "${CROSS}-cross.tgz"
