@@ -15,8 +15,8 @@ echo ">>> Building fio ${VERSION} for ${ARCH} (${CROSS})"
 # ── Install build dependencies ─────────────────────────────────────────────────
 apk add --no-cache \
     bash curl make tar xz \
-    gcc musl-dev linux-headers \
-    patch libaio-dev file
+    gcc musl-dev \
+    patch libaio-dev file binutils
 
 # ── Download musl cross-compilation toolchain ──────────────────────────────────
 # Alpine x64 本身是 musl，x64 架构直接用系统 gcc 即可，其他架构需要交叉工具链
@@ -86,7 +86,8 @@ make -j"$(nproc)"
 # ── Verify static linkage ──────────────────────────────────────────────────────
 echo ">>> Verifying binary"
 file fio
-file fio | grep -q "statically linked" || {
+# static-pie 也是静态二进制，file 输出略有不同，用 ldd 来判断
+ldd fio 2>&1 | grep -q "not a dynamic executable\|statically linked" || {
     echo "ERROR: binary is not statically linked"
     exit 1
 }
