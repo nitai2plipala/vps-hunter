@@ -10,6 +10,8 @@ set -eu
 : "${HOST:?HOST is required}"
 : "${VERSION:?VERSION is required}"
 
+export CFLAGS="-D_GNU_SOURCE"
+
 echo ">>> Building fio ${VERSION} for ${ARCH} (${CROSS})"
 
 # ── Install build dependencies ─────────────────────────────────────────────────
@@ -28,7 +30,7 @@ else
     echo ">>> Downloading musl cross toolchain for ${CROSS}"
     curl -L --retry 5 --retry-delay 5 \
          --connect-timeout 30 --max-time 300 \
-         "https://musl-mirror-o45mvnohof.edgeone.dev/${CROSS}-cross.tgz" \
+         "https://musl.cc/${CROSS}-cross.tgz" \
          -o "${CROSS}-cross.tgz" || {
         echo ">>> musl.cc failed, trying github mirror..."
         curl -L --retry 5 --retry-delay 5 \
@@ -69,7 +71,9 @@ echo ">>> Entering directory: ${FIO_DIR}"
 cd "${FIO_DIR}"
 
 echo ">>> Configuring fio"
+# FALLOC_FL_ZERO_RANGE 是 glibc 扩展，musl 未定义，手动补上
 CC="${CC_BIN}" \
+CFLAGS="-DFALLOC_FL_ZERO_RANGE=0x10" \
 LDFLAGS="-static" \
 ./configure \
     --disable-native \
@@ -78,6 +82,7 @@ LDFLAGS="-static" \
 
 echo ">>> Compiling fio ($(nproc) cores)"
 CC="${CC_BIN}" \
+CFLAGS="-DFALLOC_FL_ZERO_RANGE=0x10" \
 LDFLAGS="-static" \
 make -j"$(nproc)"
 
