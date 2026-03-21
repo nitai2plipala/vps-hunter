@@ -16,7 +16,7 @@ echo ">>> Building fio ${VERSION} for ${ARCH} (${CROSS})"
 apk add --no-cache \
     bash curl make tar xz \
     gcc musl-dev linux-headers \
-    patch libaio-dev
+    patch libaio-dev file
 
 # ── Download musl cross-compilation toolchain ──────────────────────────────────
 # Alpine x64 本身是 musl，x64 架构直接用系统 gcc 即可，其他架构需要交叉工具链
