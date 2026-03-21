@@ -10,7 +10,7 @@ jobs:
   # 1. 检查是否需要构建
   # ────────────────────────────────────────────────────────────────────────────
   check-release:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       version:      ${{ steps.get-version.outputs.version }}
       should-build: ${{ steps.check-version.outputs.should-build }}
@@ -51,7 +51,7 @@ jobs:
   build:
     needs: check-release
     if: needs.check-release.outputs.should-build == 'true'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false        # 一个架构失败不影响其他架构继续
       matrix:
@@ -114,7 +114,7 @@ jobs:
   virustotal-scan:
     needs: [check-release, build]
     if: needs.check-release.outputs.should-build == 'true'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       all-clean: ${{ steps.poll-results.outputs.all-clean }}
       scan-results: ${{ steps.poll-results.outputs.scan-results }}
@@ -265,7 +265,7 @@ jobs:
     if: |
       needs.check-release.outputs.should-build == 'true' &&
       needs.virustotal-scan.outputs.all-clean == 'true'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -378,7 +378,7 @@ jobs:
       always() &&
       needs.check-release.outputs.should-build == 'true' &&
       (failure() || needs.virustotal-scan.outputs.all-clean == 'false')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Write failure summary
         run: |
