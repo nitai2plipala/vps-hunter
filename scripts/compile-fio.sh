@@ -28,9 +28,9 @@ else
     echo ">>> Downloading musl cross toolchain for ${CROSS}"
     curl -L --retry 5 --retry-delay 5 \
          --connect-timeout 30 --max-time 300 \
-         "https://musl-mirror-o45mvnohof.edgeone.dev/${CROSS}-cross.tgz" \
+         "https://mirror.plipala.com/musl/${CROSS}-cross.tgz" \
          -o "${CROSS}-cross.tgz" || {
-        echo ">>> musl.cc failed, trying github mirror..."
+        echo ">>> mirror.plipala.com failed mirror, trying musl.cc get..."
         curl -L --retry 5 --retry-delay 5 \
              --connect-timeout 30 --max-time 300 \
              "https://musl.cc/${CROSS}-cross.tgz" \
