@@ -68,6 +68,11 @@ FIO_DIR=$(tar tf fio.tar.gz 2>/dev/null | head -1 | cut -d/ -f1)
 echo ">>> Entering directory: ${FIO_DIR}"
 cd "${FIO_DIR}"
 
+# ── Fix musl prctl header conflict 重复头文件bug────────────────────────────────────────────
+echo ">>> Patching backend.c for musl prctl conflict"
+sed -i '/#include <linux\/prctl.h>/i #include <sys\/prctl.h>' backend.c
+sed -i '/#include <linux\/prctl.h>/d' backend.c
+
 echo ">>> Configuring fio"
 # FALLOC_FL_ZERO_RANGE 是 glibc 扩展，musl 未定义，手动补上
 CC="${CC_BIN}" \
